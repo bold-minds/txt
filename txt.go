@@ -16,6 +16,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -41,11 +42,23 @@ func Format(template string, args ...any) string {
 	if len(args) == 0 {
 		return template
 	}
-	result := template
-	for _, arg := range args {
-		result = strings.Replace(result, "{}", formatValue(arg), 1)
+	// Single left-to-right scan so substituted text is never re-scanned:
+	// if a previously-substituted arg contains "{}", it must not be
+	// mistaken for the next placeholder.
+	var b strings.Builder
+	b.Grow(len(template))
+	i, ai := 0, 0
+	for i < len(template) {
+		if ai < len(args) && i+1 < len(template) && template[i] == '{' && template[i+1] == '}' {
+			b.WriteString(formatValue(args[ai]))
+			ai++
+			i += 2
+			continue
+		}
+		b.WriteByte(template[i])
+		i++
 	}
-	return result
+	return b.String()
 }
 
 // formatValue renders a single argument using the type switches Format needs
@@ -63,29 +76,29 @@ func formatValue(v any) string {
 		}
 		return "false"
 	case int:
-		return fmt.Sprintf("%d", x)
+		return strconv.FormatInt(int64(x), 10)
 	case int8:
-		return fmt.Sprintf("%d", x)
+		return strconv.FormatInt(int64(x), 10)
 	case int16:
-		return fmt.Sprintf("%d", x)
+		return strconv.FormatInt(int64(x), 10)
 	case int32:
-		return fmt.Sprintf("%d", x)
+		return strconv.FormatInt(int64(x), 10)
 	case int64:
-		return fmt.Sprintf("%d", x)
+		return strconv.FormatInt(x, 10)
 	case uint:
-		return fmt.Sprintf("%d", x)
+		return strconv.FormatUint(uint64(x), 10)
 	case uint8:
-		return fmt.Sprintf("%d", x)
+		return strconv.FormatUint(uint64(x), 10)
 	case uint16:
-		return fmt.Sprintf("%d", x)
+		return strconv.FormatUint(uint64(x), 10)
 	case uint32:
-		return fmt.Sprintf("%d", x)
+		return strconv.FormatUint(uint64(x), 10)
 	case uint64:
-		return fmt.Sprintf("%d", x)
+		return strconv.FormatUint(x, 10)
 	case float32:
-		return fmt.Sprintf("%g", x)
+		return strconv.FormatFloat(float64(x), 'g', -1, 32)
 	case float64:
-		return fmt.Sprintf("%g", x)
+		return strconv.FormatFloat(x, 'g', -1, 64)
 	case error:
 		return "Error: " + x.Error()
 	default:
@@ -111,11 +124,16 @@ type FmtType struct {
 
 // Precision returns a copy of f with the given decimal/character precision.
 // The semantics match fmt: %f/%e/%E/%g/%G get that many decimal places;
-// %q/%s/%x/%X take that many input characters.
+// %q/%s/%x/%X take that many input characters. Negative values are clamped
+// to 0 so a malformed precision never produces fmt error output like
+// "%!-(float64=3)1f".
 //
 //	txt.FormatAs(txt.Float.Precision(2), 3.14159)   // "3.14"
 //	txt.FormatAs(txt.Scientific.Precision(3), 1e10) // "1.000e+10"
 func (f FmtType) Precision(p int) FmtType {
+	if p < 0 {
+		p = 0
+	}
 	return FmtType{verb: f.verb, precision: p, hasPrecision: true}
 }
 
@@ -148,9 +166,11 @@ func FormatAs(f FmtType, values ...any) string {
 	if len(values) == 0 {
 		return ""
 	}
-	format := "%" + f.verb
+	var format string
 	if f.hasPrecision {
 		format = fmt.Sprintf("%%.%d%s", f.precision, f.verb)
+	} else {
+		format = "%" + f.verb
 	}
 	if len(values) == 1 {
 		return fmt.Sprintf(format, values[0])
@@ -270,8 +290,10 @@ func Substring(s string, start, length int) string {
 //	txt.Truncate("abcdef", 2, "...")       // ".."
 //	txt.Truncate("anything", -1, "...")    // ""
 //
-// Truncate operates on bytes. For UTF-8 safety on multibyte strings, bound
-// with Substring first.
+// WARNING: Truncate operates on bytes, not runes. Calling it on a string
+// containing multibyte UTF-8 characters can cut mid-sequence and produce
+// an invalid-UTF-8 result (e.g. Truncate("héllo", 2, "") → "h\xc3"). For
+// UTF-8 safety, bound the input with Substring first.
 func Truncate(s string, maxLen int, suffix string) string {
 	if maxLen < 0 {
 		return ""
@@ -488,8 +510,22 @@ func Numbers() RandomOption { return charsetOpt{charset: charsDigit} }
 // Symbols uses the standard printable ASCII symbol set.
 func Symbols() RandomOption { return charsetOpt{charset: charsSymbol} }
 
-// Chars uses exactly the provided characters as the charset.
-func Chars(chars ...byte) RandomOption { return charsetOpt{charset: string(chars)} }
+// Chars uses exactly the provided characters as the charset. Duplicate
+// bytes are removed so each character has equal selection probability —
+// Chars('a', 'a', 'b') is identical to Chars('a', 'b').
+func Chars(chars ...byte) RandomOption {
+	seen := make(map[byte]struct{}, len(chars))
+	var b strings.Builder
+	b.Grow(len(chars))
+	for _, ch := range chars {
+		if _, ok := seen[ch]; ok {
+			continue
+		}
+		seen[ch] = struct{}{}
+		b.WriteByte(ch)
+	}
+	return charsetOpt{charset: b.String()}
+}
 
 // Include adds the given characters to the active charset. Applied after
 // any charset option so additions are not overwritten.

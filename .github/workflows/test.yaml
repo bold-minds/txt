@@ -15,11 +15,27 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.60.3
+
   test:
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
+        go-version: [ '1.21', 'stable' ]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +45,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: ${{ matrix.go-version }}
 
       - name: Install dependencies
         run: go mod download
@@ -46,13 +62,11 @@ jobs:
             git diff --exit-code go.sum
           fi
 
-      - name: Run tests (Unix)
-        if: runner.os != 'Windows'
+      # Go's race detector has supported Windows since 1.20, so run it on
+      # all three OSes — the library reads crypto/rand concurrently inside
+      # Random and dropping -race on Windows would leave a coverage gap.
+      - name: Run tests
         run: go test -v -race -coverprofile=coverage.out ./...
-
-      - name: Run tests (Windows)
-        if: runner.os == 'Windows'
-        run: go test -v -coverprofile="coverage.out" ./...
 
       - name: Run benchmarks
         run: go test -bench=. -benchmem ./...
@@ -64,13 +78,13 @@ jobs:
       # (gist scope only). PRs and Windows/macOS runs skip this step.
       - name: Extract coverage percent
         id: coverage
-        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == 'stable' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           pct=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%",""); print $3}')
           echo "pct=$pct" >> "$GITHUB_OUTPUT"
 
       - name: Update coverage badge gist
-        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == 'stable' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}

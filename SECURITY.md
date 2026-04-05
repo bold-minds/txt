@@ -18,7 +18,7 @@ Please do not report security vulnerabilities through public GitHub issues, disc
 
 Send an email to **security@boldminds.tech** with:
 
-- **Subject**: Security Vulnerability in bold-minds/each
+- **Subject**: Security Vulnerability in bold-minds/txt
 - **Description**: Detailed description of the vulnerability
 - **Steps to Reproduce**: Clear steps to reproduce the issue
 - **Impact**: Potential impact and severity assessment
@@ -32,35 +32,33 @@ Send an email to **security@boldminds.tech** with:
 
 ## Security Considerations
 
-`each` is a pure-computation library with a very small attack surface:
+`txt` is a small, self-contained string library with a narrow attack surface:
 
-- **No network I/O.** `each` does not make network calls.
-- **No file I/O.** `each` does not read or write files.
-- **No reflection.** All operations use Go's generics and concrete type constraints.
+- **No network I/O.** `txt` does not make network calls.
+- **No file I/O.** `txt` does not read or write files (apart from `Print`, which writes a formatted string to stdout via `fmt.Println`).
 - **No external dependencies.** Pure Go stdlib.
-- **Immutable.** `each` never modifies input slices.
-- **Nil-safe.** All functions handle nil slices without panicking.
+- **Minimal reflection.** Reflection is used in exactly one place — `formatValue` calls `reflect.TypeOf(v).Kind() == reflect.Chan` to render channel arguments for `Format`. All other type handling goes through a concrete type switch.
+- **Cryptographically-random string generation.** `Random` draws from `crypto/rand` (not `math/rand`) via a rejection-sampling helper that avoids modulo bias.
 
-### Known runtime-panic sources from caller misuse
+### Known behaviors callers must be aware of
 
-`each` does not panic on any documented input. However, `GroupBy` and
-`KeyBy` use the caller-provided key function's return value as a Go map
-key. If the key function returns a non-comparable dynamic type (e.g.,
-a slice or map stored inside an `any`), Go's map implementation will
-panic at runtime with a "hash of unhashable type" error. `each` does
-not recover from these panics. Callers must ensure their key functions
-return comparable values.
+#### `Truncate` can produce invalid UTF-8
 
-### Predicates with side effects
+`Truncate` operates on bytes, not runes. Calling it on a string that contains multibyte UTF-8 characters can cut mid-sequence and yield a byte slice that is not valid UTF-8 (e.g. `txt.Truncate("héllo", 2, "")` → `"h\xc3"`). This is a deliberate trade-off for predictable byte-length bounds. For UTF-8 safety, bound the input with `Substring` first, which operates on runes.
 
-All `each` functions accept a predicate or key function supplied by the
-caller. These functions are evaluated one or more times per element.
-`each` does not sandbox predicate execution — if a predicate panics,
-the panic propagates to the caller. If a predicate has side effects
-(I/O, global state mutation, etc.), those side effects occur during
-the call. For `Every`, the short-circuit behavior means that elements
-after the first false are not visited, so their predicate side effects
-will not fire.
+This is not a panic or memory-safety issue, but it can surface in downstream systems that assume well-formed UTF-8 (database columns, JSON encoders, Protobuf fields). Treat `Truncate` as a byte operation and encode accordingly.
+
+#### `Random` and `randInt` panic on `crypto/rand` failure
+
+`Random` and the internal `randInt` helper panic with `"txt: crypto/rand.Read failed: <err>"` if `crypto/rand.Read` returns a non-nil error. On a healthy system this never happens — `crypto/rand` only fails on extraordinary system-level faults (e.g. a sealed getrandom syscall, an exhausted file descriptor table). The library does not attempt to recover because there is no meaningful fallback for a broken entropy source, and silently returning predictable output would be worse than a panic.
+
+#### `Random` entropy use case
+
+`Random` is suitable for non-key secrets such as invite codes, correlation IDs, password resets, or test fixtures. It is **not** a substitute for key derivation or high-entropy cryptographic material — use `crypto/rand`, HKDF, or Argon2id directly for those.
+
+### No panics on caller input
+
+Apart from the `crypto/rand` failure path above, `txt` never panics on any documented caller input. `Substring` clamps out-of-range indices, `Truncate` tolerates negative and oversized `maxLen`, and `Format` leaves unfilled placeholders in place when arguments are missing so the bug is visible to whoever reads the log line.
 
 ## Security Updates
 

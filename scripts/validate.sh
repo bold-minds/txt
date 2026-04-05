@@ -251,8 +251,13 @@ run_integration_tests() {
             found_tests=true
             print_info "Found integration tests in $test_dir"
             
-            local test_args="-timeout=$TEST_TIMEOUT -tags=$INTEGRATION_TAG"
-            if ! go test $test_args "$test_dir/..."; then
+            # Array form — matches run_unit_tests and avoids word-splitting
+            # pitfalls if flags ever contain spaces.
+            local test_args=(
+                -timeout="$TEST_TIMEOUT"
+                -tags="$INTEGRATION_TAG"
+            )
+            if ! go test "${test_args[@]}" "$test_dir/..."; then
                 return 1
             fi
         fi

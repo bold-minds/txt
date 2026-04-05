@@ -20,7 +20,7 @@ linters:
             - $all
           allow:
             - $gostd
-            - github.com/bold-minds/each
+            - github.com/bold-minds/txt
     errcheck:
       check-type-assertions: true
     govet:

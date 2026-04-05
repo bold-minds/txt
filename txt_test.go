@@ -91,6 +91,32 @@ func TestFormat_ChannelType(t *testing.T) {
 	}
 }
 
+// TestFormat_SubstitutedArgIsNotRescanned pins the single-pass scan: once an
+// argument has been substituted into the output, any "{}" sequence inside
+// that rendered value must NOT be treated as another placeholder. A previous
+// strings.Replace-based implementation failed this: the next arg would land
+// inside the first arg's text.
+func TestFormat_SubstitutedArgIsNotRescanned(t *testing.T) {
+	cases := []struct {
+		name string
+		tmpl string
+		args []any
+		want string
+	}{
+		{"literal-{}-in-arg", "a={} b={}", []any{"{}", "X"}, "a={} b=X"},
+		{"embedded-{}-in-arg", "{} + {}", []any{"a{}b", "c"}, "a{}b + c"},
+		{"nested-braces", "x={} y={}", []any{"{{}}", "Z"}, "x={{}} y=Z"},
+		{"arg-is-bare-placeholder", "{}-{}", []any{"{}", "end"}, "{}-end"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Format(tc.tmpl, tc.args...); got != tc.want {
+				t.Errorf("Format(%q, %v): got %q, want %q", tc.tmpl, tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestFormat_StructFallback(t *testing.T) {
 	// Unknown types route through fmt.Sprintf("%v", ...).
 	type point struct{ X, Y int }
@@ -154,6 +180,19 @@ func TestFormatAs_Precision(t *testing.T) {
 	}
 	if got := FormatAs(Scientific.Precision(3), 1e10); got != "1.000e+10" {
 		t.Errorf("FormatAs(Scientific.Precision(3)): got %q", got)
+	}
+}
+
+// TestFormatAs_PrecisionNegativeClamped pins the clamping behavior for
+// negative precision. A previous version let negative values flow into the
+// format string, producing fmt error output like "%!-(float64=3)1f" that
+// a caller would then log or show to a user.
+func TestFormatAs_PrecisionNegativeClamped(t *testing.T) {
+	if got := FormatAs(Float.Precision(-1), 3.14); got != "3" {
+		t.Errorf("FormatAs(Float.Precision(-1), 3.14): got %q, want %q", got, "3")
+	}
+	if got := FormatAs(Float.Precision(-100), 2.718); got != "3" {
+		t.Errorf("FormatAs(Float.Precision(-100), 2.718): got %q, want %q", got, "3")
 	}
 }
 
@@ -415,6 +454,34 @@ func TestRandom_Chars(t *testing.T) {
 			t.Errorf("Random(Chars): unexpected byte %q in %q", b, out)
 			return
 		}
+	}
+}
+
+// TestChars_Dedup pins that duplicate bytes passed to Chars do not skew the
+// distribution. We draw a large sample from Chars('a','a','b') and expect
+// roughly equal counts of 'a' and 'b'; the pre-dedup implementation would
+// have given 'a' about twice the probability of 'b'.
+func TestChars_Dedup(t *testing.T) {
+	const n = 4000
+	out := Random(n, Chars('a', 'a', 'b'))
+	var aCount, bCount int
+	for _, c := range []byte(out) {
+		switch c {
+		case 'a':
+			aCount++
+		case 'b':
+			bCount++
+		default:
+			t.Fatalf("Chars dedup: unexpected byte %q", c)
+		}
+	}
+	// Equal probability → expected ratio 1.0. Allow a wide 0.85–1.15 band
+	// so crypto/rand jitter never flakes this, but the pre-dedup ratio of
+	// ~2.0 is well outside it.
+	ratio := float64(aCount) / float64(bCount)
+	if ratio < 0.85 || ratio > 1.15 {
+		t.Errorf("Chars dedup: a/b ratio = %.2f (a=%d, b=%d), want near 1.0",
+			ratio, aCount, bCount)
 	}
 }
 
