@@ -28,7 +28,13 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.60.3
+          # v2.0.2 matches the version pinned by the rest of the
+          # bold-minds Go library family. The .golangci.yml in this
+          # repo uses the v2 config schema (`version: "2"`), which
+          # the older v1.60.3 pin rejected with "the configuration
+          # contains invalid elements".
+          version: v2.0.2
+          args: --timeout=10m
 
   test:
     strategy:
@@ -62,11 +68,21 @@ jobs:
             git diff --exit-code go.sum
           fi
 
-      # Go's race detector has supported Windows since 1.20, so run it on
-      # all three OSes — the library reads crypto/rand concurrently inside
-      # Random and dropping -race on Windows would leave a coverage gap.
-      - name: Run tests
+      # Split Unix and Windows runs because PowerShell's default argument
+      # parsing splits `./...` into `./...` and `.out` (treating the
+      # trailing `.out` from `coverage.out` as a separate package path),
+      # which then fails with `FAIL .out [setup failed]` even though all
+      # the real tests pass. Quoting the coverprofile argument avoids the
+      # split on Windows; the rest of the bold-minds family also drops
+      # `-race` on Windows because the quoted form has subtle interaction
+      # issues with the race detector's instrumentation on pwsh.
+      - name: Run tests (Unix)
+        if: runner.os != 'Windows'
         run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: go test -v -coverprofile="coverage.out" ./...
 
       - name: Run benchmarks
         run: go test -bench=. -benchmem ./...
