@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-04-05
+
 ### Changed — BREAKING
 
 - **`Truncate` signature changed** from `func(s, maxLen, suffix) string` to `func(s, maxLen, suffix) (kept, removed string)`. The kept value has the same semantics as the 0.1.x return; the second return holds the portion of `s` that was dropped to make room for `suffix`. Callers that only need the truncated output can discard it with `kept, _ := txt.Truncate(...)`. The two-value return is load-bearing for callers that need to report what was cut — error messages, log lines, "show more" UI affordances. Benchmarks and examples updated accordingly.
