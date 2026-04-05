@@ -52,9 +52,39 @@ func ExampleSubstring() {
 }
 
 func ExampleTruncate() {
-	fmt.Println(txt.Truncate("Hello world", 8, "..."))
-	fmt.Println(txt.Truncate("short", 20, "..."))
+	kept, removed := txt.Truncate("Hello world", 8, "...")
+	fmt.Printf("kept=%q removed=%q\n", kept, removed)
+	kept, removed = txt.Truncate("short", 20, "...")
+	fmt.Printf("kept=%q removed=%q\n", kept, removed)
 	// Output:
-	// Hello...
-	// short
+	// kept="Hello..." removed=" world"
+	// kept="short" removed=""
+}
+
+func ExampleMutate() {
+	// Pipeline: squish whitespace, then truncate with ellipsis.
+	fmt.Println(txt.Mutate(
+		"   The   quick   brown   fox   ",
+		txt.Squish,
+		txt.TruncateOp(15, "..."),
+	))
+	// Output: The quick br...
+}
+
+func ExamplePrint_multiLine() {
+	// Multi-line mode: each arg prints on its own line.
+	txt.Print("line 1", "line 2", "line 3")
+	// Output:
+	// line 1
+	// line 2
+	// line 3
+}
+
+func ExamplePrint_mapTemplate() {
+	// Map mode: {key} placeholders substituted from the map.
+	txt.Print("Hello {name}, age {age}", map[string]any{
+		"name": "Alice",
+		"age":  30,
+	})
+	// Output: Hello Alice, age 30
 }

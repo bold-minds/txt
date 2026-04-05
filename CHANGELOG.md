@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — BREAKING
+
+- **`Truncate` signature changed** from `func(s, maxLen, suffix) string` to `func(s, maxLen, suffix) (kept, removed string)`. The kept value has the same semantics as the 0.1.x return; the second return holds the portion of `s` that was dropped to make room for `suffix`. Callers that only need the truncated output can discard it with `kept, _ := txt.Truncate(...)`. The two-value return is load-bearing for callers that need to report what was cut — error messages, log lines, "show more" UI affordances. Benchmarks and examples updated accordingly.
+
+  Migration:
+  ```go
+  // 0.1.x
+  s := txt.Truncate(input, 80, "...")
+
+  // 0.2.0
+  s, _ := txt.Truncate(input, 80, "...")
+  // or, if you need the dropped portion:
+  s, dropped := txt.Truncate(input, 80, "...")
+  ```
+
+### Added
+
+- **`Mutate(s string, opts ...MutateOption) string`** — composable string transformation pipeline. Each option is `func(string) string`, so `txt.Squish` can be passed directly (its signature matches) and user-defined closures compose naturally. Example:
+  ```go
+  result := txt.Mutate(input, txt.Squish, txt.TruncateOp(80, "..."))
+  ```
+- **`MutateOption`** type (`func(string) string`) exposed for callers who want to build their own pipeline steps.
+- **`SubstringOp(start, length int) MutateOption`** — parameter-carrying wrapper around `Substring` for Mutate pipelines.
+- **`TruncateOp(maxLen int, suffix string) MutateOption`** — parameter-carrying wrapper around `Truncate` that keeps the kept portion and discards `removed`. Use `Truncate` directly if you need both halves inside a pipeline.
+- **`BetweenOp(start, end string) MutateOption`** — parameter-carrying wrapper around `Between` for Mutate pipelines.
+- **`Print` now supports three modes**, dispatched deterministically by argument shape:
+  1. **Map mode** — exactly two args, a string template and a `map[string]any`: the template's `{key}` placeholders are substituted from the map.
+  2. **Format mode** — first arg is a string containing `{}` placeholders; remaining args fill them positionally (the existing v0.1.x behavior).
+  3. **Multi-line mode** — anything else: each arg is printed on its own line.
+
+  The signature changed from `Print(template string, args ...any)` to `Print(args ...any)` to accommodate multi-line and map inputs, but every v0.1.x call site continues to work because a single-string arg or a template-plus-args still dispatches to the same Format-mode path.
+
 ## [0.1.0] - 2026-04-05
 
 Initial release.

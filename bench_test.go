@@ -90,7 +90,7 @@ func BenchmarkTruncate_Under(b *testing.B) {
 	b.ReportAllocs()
 	s := "short"
 	for i := 0; i < b.N; i++ {
-		_ = Truncate(s, 100, "...")
+		_, _ = Truncate(s, 100, "...")
 	}
 }
 
@@ -98,7 +98,19 @@ func BenchmarkTruncate_Over(b *testing.B) {
 	b.ReportAllocs()
 	s := "The quick brown fox jumps over the lazy dog"
 	for i := 0; i < b.N; i++ {
-		_ = Truncate(s, 20, "...")
+		_, _ = Truncate(s, 20, "...")
+	}
+}
+
+// Benchmark_Mutate exercises the composable pipeline path that chains
+// Squish into TruncateOp. This is the primary shape v0.2.0 shipped and
+// regressions in the pipeline overhead (e.g. per-option allocation) show
+// up here.
+func Benchmark_Mutate_SquishTruncate(b *testing.B) {
+	b.ReportAllocs()
+	s := "   The   quick   brown   fox   jumps   over   the   lazy   dog   "
+	for i := 0; i < b.N; i++ {
+		_ = Mutate(s, Squish, TruncateOp(20, "..."))
 	}
 }
 

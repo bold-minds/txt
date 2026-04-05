@@ -356,35 +356,119 @@ func TestSubstring_UnicodeSafeBoundaries(t *testing.T) {
 
 func TestTruncate(t *testing.T) {
 	cases := []struct {
-		name   string
-		s      string
-		maxLen int
-		suffix string
-		want   string
+		name        string
+		s           string
+		maxLen      int
+		suffix      string
+		wantKept    string
+		wantRemoved string
 	}{
-		{"under-limit", "short", 20, "...", "short"},
-		{"exact-limit", "hello", 5, "...", "hello"},
-		{"truncates-with-suffix", "Hello world", 8, "...", "Hello..."},
-		{"suffix-fills-maxlen", "abcdef", 2, "...", ".."},
-		{"suffix-exact-maxlen", "abcdef", 3, "...", "..."},
-		{"empty-suffix", "Hello world", 5, "", "Hello"},
-		{"negative-maxlen", "anything", -1, "...", ""},
-		{"zero-maxlen", "anything", 0, "...", ""},
-		{"empty-string", "", 10, "...", ""},
+		{"under-limit", "short", 20, "...", "short", ""},
+		{"exact-limit", "hello", 5, "...", "hello", ""},
+		{"truncates-with-suffix", "Hello world", 8, "...", "Hello...", " world"},
+		{"suffix-fills-maxlen", "abcdef", 2, "...", "..", "abcdef"},
+		{"suffix-exact-maxlen", "abcdef", 3, "...", "...", "abcdef"},
+		{"empty-suffix", "Hello world", 5, "", "Hello", " world"},
+		{"negative-maxlen", "anything", -1, "...", "", "anything"},
+		{"zero-maxlen", "anything", 0, "...", "", "anything"},
+		{"empty-string", "", 10, "...", "", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := Truncate(tc.s, tc.maxLen, tc.suffix)
-			if got != tc.want {
-				t.Errorf("Truncate(%q, %d, %q): got %q, want %q",
-					tc.s, tc.maxLen, tc.suffix, got, tc.want)
+			kept, removed := Truncate(tc.s, tc.maxLen, tc.suffix)
+			if kept != tc.wantKept {
+				t.Errorf("Truncate(%q, %d, %q): kept = %q, want %q",
+					tc.s, tc.maxLen, tc.suffix, kept, tc.wantKept)
 			}
-			// Byte-length guarantee: output <= maxLen when maxLen >= 0.
-			if tc.maxLen >= 0 && len(got) > tc.maxLen {
-				t.Errorf("Truncate(%q, %d, %q): returned %q with len %d > maxLen",
-					tc.s, tc.maxLen, tc.suffix, got, len(got))
+			if removed != tc.wantRemoved {
+				t.Errorf("Truncate(%q, %d, %q): removed = %q, want %q",
+					tc.s, tc.maxLen, tc.suffix, removed, tc.wantRemoved)
+			}
+			// Byte-length guarantee: kept <= maxLen when maxLen >= 0.
+			if tc.maxLen >= 0 && len(kept) > tc.maxLen {
+				t.Errorf("Truncate(%q, %d, %q): kept %q len %d > maxLen",
+					tc.s, tc.maxLen, tc.suffix, kept, len(kept))
 			}
 		})
+	}
+}
+
+// =============================================================================
+// Mutate
+// =============================================================================
+
+func TestMutate_Empty(t *testing.T) {
+	// No options → input returned unchanged.
+	if got := Mutate("hello"); got != "hello" {
+		t.Errorf("Mutate(\"hello\") with no options = %q, want %q", got, "hello")
+	}
+}
+
+func TestMutate_SingleOption(t *testing.T) {
+	// Squish matches the func(string) string signature directly —
+	// it can be passed as a MutateOption without a closure.
+	if got := Mutate("  hello   world  ", Squish); got != "hello world" {
+		t.Errorf("Mutate(Squish) = %q, want %q", got, "hello world")
+	}
+}
+
+func TestMutate_Pipeline(t *testing.T) {
+	// Squish of this input produces "Hello world" (11 bytes). A
+	// TruncateOp budget of 11 triggers the under-limit path and
+	// returns the string unchanged — verifies that options compose
+	// without an off-by-one at the equality boundary.
+	short := "  Hello  world  "
+	if got := Mutate(short, Squish, TruncateOp(11, "...")); got != "Hello world" {
+		t.Errorf("Mutate at exact boundary = %q, want %q", got, "Hello world")
+	}
+
+	// Longer input: squish to a canonical form, then truncate with
+	// ellipsis. Exercises the full pipeline and the cut-with-suffix
+	// path of Truncate via TruncateOp.
+	long := "   The   quick   brown   fox   "
+	got := Mutate(long, Squish, TruncateOp(11, "..."))
+	// Squish → "The quick brown fox" (19 chars). TruncateOp(11, "...")
+	// → cut = 11 - 3 = 8, kept = "The quic" + "..." = "The quic..."
+	if got != "The quic..." {
+		t.Errorf("Mutate pipeline = %q, want %q", got, "The quic...")
+	}
+}
+
+func TestMutate_SubstringOp(t *testing.T) {
+	got := Mutate("Hello World", SubstringOp(0, 5))
+	if got != "Hello" {
+		t.Errorf("Mutate(SubstringOp(0,5)) = %q, want %q", got, "Hello")
+	}
+}
+
+func TestMutate_BetweenOp(t *testing.T) {
+	got := Mutate("prefix [target] suffix", BetweenOp("[", "]"))
+	if got != "target" {
+		t.Errorf("Mutate(BetweenOp) = %q, want %q", got, "target")
+	}
+}
+
+func TestMutate_OrderMatters(t *testing.T) {
+	// Substring before Truncate vs Truncate before Substring — the
+	// intermediate result changes the final output. ASCII "..." is
+	// used throughout to avoid the multi-byte-ellipsis byte-budget
+	// interaction with Truncate.
+	in := "Hello, World!"
+
+	// Substring(in, 0, 5) = "Hello" (5 bytes).
+	// TruncateOp(4, "...") on "Hello": len=5 > 4, maxLen(4) > len(suffix)(3),
+	// cut = 4-3 = 1, kept = "H" + "..." = "H..." (4 bytes).
+	a := Mutate(in, SubstringOp(0, 5), TruncateOp(4, "..."))
+	if a != "H..." {
+		t.Errorf("Mutate(Substring, Truncate) = %q, want %q", a, "H...")
+	}
+
+	// TruncateOp(8, "...") on in ("Hello, World!", 13 bytes):
+	// cut = 5, kept = "Hello" + "..." = "Hello..." (8 bytes).
+	// Then SubstringOp(0, 5) takes first 5 runes = "Hello".
+	b := Mutate(in, TruncateOp(8, "..."), SubstringOp(0, 5))
+	if b != "Hello" {
+		t.Errorf("Mutate(Truncate, Substring) = %q, want %q", b, "Hello")
 	}
 }
 

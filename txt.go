@@ -186,18 +186,73 @@ func FormatAs(f FmtType, values ...any) string {
 }
 
 // =============================================================================
-// Print — fmt.Println with {} placeholders
+// Print — multi-mode stdout writer
 // =============================================================================
 
-// Print expands a Format template and writes it to stdout followed by a
-// newline. It is a convenience on top of Format + fmt.Println — use Format
-// directly when you need the string (for logs, errors, etc.) rather than
-// stdout output.
+// Print writes args to stdout, dispatching between three modes based on
+// argument shape:
 //
-//	txt.Print("user {} logged in", userID)
-//	txt.Print("ready")
-func Print(template string, args ...any) {
-	fmt.Println(Format(template, args...))
+//  1. Map mode — exactly two args, a string template and a map[string]any:
+//     the template's {key} placeholders are substituted from the map.
+//     txt.Print("Hello {name}, you are {age}", map[string]any{
+//         "name": "Alice", "age": 30,
+//     })
+//     → "Hello Alice, you are 30"
+//
+//  2. Format mode — the first arg is a string containing "{}" placeholders;
+//     remaining args fill them positionally (same as Format + Println).
+//     txt.Print("user {} logged in", userID)
+//
+//  3. Multi-line mode — anything else: each arg is printed on its own line.
+//     txt.Print("line 1", "line 2", "line 3")
+//     txt.Print("ready") // single line, no substitution
+//
+// Mode selection is deterministic and evaluated in the order above. If
+// the first arg is a string containing both {} and {key} placeholders,
+// Map mode takes priority when a map is supplied; otherwise Format mode
+// runs and {key} tokens are left untouched.
+func Print(args ...any) {
+	if len(args) == 0 {
+		return
+	}
+
+	// Map mode: exactly two args, (string, map[string]any).
+	if len(args) == 2 {
+		if template, ok := args[0].(string); ok {
+			if data, ok := args[1].(map[string]any); ok {
+				fmt.Println(formatMap(template, data))
+				return
+			}
+		}
+	}
+
+	// Format mode: first arg is a string containing {} placeholders.
+	if tmpl, ok := args[0].(string); ok && strings.Contains(tmpl, "{}") {
+		fmt.Println(Format(tmpl, args[1:]...))
+		return
+	}
+
+	// Multi-line mode: print each arg on its own line using Format's
+	// value renderer so ints/bools/errors format the same as in Format.
+	for _, a := range args {
+		fmt.Println(formatValue(a))
+	}
+}
+
+// formatMap substitutes {key} placeholders in template with the
+// corresponding map values, rendered via formatValue. Empty map keys
+// are skipped so the {key} grammar does not collide with Format's {}
+// positional placeholder.
+func formatMap(template string, data map[string]any) string {
+	result := template
+	for key, value := range data {
+		if key == "" {
+			continue
+		}
+		placeholder := "{" + key + "}"
+		result = strings.ReplaceAll(result, placeholder, formatValue(value))
+	}
+	return result
 }
 
 // =============================================================================
@@ -280,31 +335,104 @@ func Substring(s string, start, length int) string {
 	return string(runes[start:end])
 }
 
-// Truncate shortens s to at most maxLen bytes, appending suffix if s was
-// actually shortened. The returned string's byte length is guaranteed to
-// be <= maxLen. If maxLen <= len(suffix), a prefix of suffix of that length
-// is returned (so Truncate("hello", 2, "...") → "..").
+// Truncate shortens s to at most maxLen bytes, appending suffix if s
+// was actually shortened, and returns both the kept prefix and the
+// removed suffix. The kept string's byte length is guaranteed to be
+// <= maxLen. If maxLen <= len(suffix), a prefix of suffix of that
+// length is returned as kept and the whole of s is reported as removed.
 //
-//	txt.Truncate("Hello world", 8, "...")  // "Hello..."
-//	txt.Truncate("short", 20, "...")       // "short"
-//	txt.Truncate("abcdef", 2, "...")       // ".."
-//	txt.Truncate("anything", -1, "...")    // ""
+//	kept, removed := txt.Truncate("Hello world", 8, "...")
+//	// kept = "Hello...", removed = " world"
 //
-// WARNING: Truncate operates on bytes, not runes. Calling it on a string
-// containing multibyte UTF-8 characters can cut mid-sequence and produce
-// an invalid-UTF-8 result (e.g. Truncate("héllo", 2, "") → "h\xc3"). For
-// UTF-8 safety, bound the input with Substring first.
-func Truncate(s string, maxLen int, suffix string) string {
+//	kept, removed := txt.Truncate("short", 20, "...")
+//	// kept = "short", removed = ""
+//
+//	kept, removed := txt.Truncate("abcdef", 2, "...")
+//	// kept = "..", removed = "abcdef"
+//
+//	kept, removed := txt.Truncate("anything", -1, "...")
+//	// kept = "", removed = "anything"
+//
+// The two-value return is load-bearing for callers that need to
+// surface the dropped content — error messages that show exactly what
+// was cut, log lines that report a byte count, UI "show more"
+// affordances, and so on. Callers that only need the truncated
+// output can discard the second value: kept, _ := txt.Truncate(...).
+//
+// WARNING: Truncate operates on bytes, not runes. Calling it on a
+// string containing multibyte UTF-8 characters can cut mid-sequence
+// and produce an invalid-UTF-8 result in either the kept or removed
+// half (e.g. Truncate("héllo", 2, "") → kept="h\xc3"). For UTF-8
+// safety, bound the input with Substring first.
+func Truncate(s string, maxLen int, suffix string) (kept, removed string) {
 	if maxLen < 0 {
-		return ""
+		return "", s
 	}
 	if len(s) <= maxLen {
-		return s
+		return s, ""
 	}
 	if maxLen <= len(suffix) {
-		return suffix[:maxLen]
+		return suffix[:maxLen], s
 	}
-	return s[:maxLen-len(suffix)] + suffix
+	cut := maxLen - len(suffix)
+	return s[:cut] + suffix, s[cut:]
+}
+
+// =============================================================================
+// Mutate — composable string transformation pipeline
+// =============================================================================
+
+// MutateOption is a single step in a Mutate pipeline. Each option
+// takes the current string and returns the transformed result. The
+// bare type is `func(string) string`, so any plain string transform
+// can be passed directly — including txt.Squish, since its signature
+// matches. For transformations that need parameters (Substring,
+// Truncate), use the *Op constructors below.
+type MutateOption func(string) string
+
+// Mutate applies opts to s in order, threading the result of each
+// option into the next. It is the composable form of nesting calls
+// by hand — useful when the operations are selected at runtime or
+// when the call would otherwise become a deeply nested expression.
+//
+//	// Equivalent to: kept, _ := txt.Truncate(txt.Squish(input), 80, "…")
+//	result := txt.Mutate(input, txt.Squish, txt.TruncateOp(80, "…"))
+//
+// If opts is empty Mutate returns s unchanged.
+func Mutate(s string, opts ...MutateOption) string {
+	for _, opt := range opts {
+		s = opt(s)
+	}
+	return s
+}
+
+// SubstringOp returns a MutateOption that extracts length runes from
+// start. Semantics match the package-level Substring function;
+// negative start counts from the end and out-of-range indices clamp.
+func SubstringOp(start, length int) MutateOption {
+	return func(s string) string {
+		return Substring(s, start, length)
+	}
+}
+
+// TruncateOp returns a MutateOption that calls Truncate and keeps
+// only the kept portion — the removed suffix is discarded. Use
+// Truncate directly if you need both halves of the result.
+func TruncateOp(maxLen int, suffix string) MutateOption {
+	return func(s string) string {
+		kept, _ := Truncate(s, maxLen, suffix)
+		return kept
+	}
+}
+
+// BetweenOp returns a MutateOption that extracts the substring
+// between start and end. Semantics match the package-level Between
+// function: empty delimiters anchor at the respective ends, and a
+// missing delimiter yields an empty string.
+func BetweenOp(start, end string) MutateOption {
+	return func(s string) string {
+		return Between(s, start, end)
+	}
 }
 
 // =============================================================================
