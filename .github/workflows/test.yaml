@@ -1,0 +1,83 @@
+name: tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# Read-only by default. This workflow never writes back to the repo —
+# badges are served directly by shields.io from public GitHub APIs and
+# pkg.go.dev, and coverage is written to a public gist via
+# schneegans/dynamic-badges-action (using GIST_TOKEN, a PAT with `gist`
+# scope — not a GITHUB_TOKEN, so it doesn't touch the repo at all).
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: go mod download
+
+      # Build validation (cross-platform).
+      # Conditionally diffs go.sum only if present — pure-stdlib children have none.
+      - name: Build validation
+        shell: bash
+        run: |
+          go build ./...
+          go mod tidy
+          git diff --exit-code go.mod
+          if [ -f go.sum ]; then
+            git diff --exit-code go.sum
+          fi
+
+      - name: Run tests (Unix)
+        if: runner.os != 'Windows'
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: go test -v -coverprofile="coverage.out" ./...
+
+      - name: Run benchmarks
+        run: go test -bench=. -benchmem ./...
+
+      # Coverage badge: on a successful push to main from ubuntu-latest only,
+      # extract the total coverage percent from coverage.out and write it to
+      # the repo's public gist via schneegans/dynamic-badges-action. shields.io
+      # reads the gist via endpoint= mode. Requires GIST_TOKEN repo secret
+      # (gist scope only). PRs and Windows/macOS runs skip this step.
+      - name: Extract coverage percent
+        id: coverage
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          pct=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%",""); print $3}')
+          echo "pct=$pct" >> "$GITHUB_OUTPUT"
+
+      - name: Update coverage badge gist
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: eb5318a268371b987ef7b15fef8f9bee
+          filename: coverage.json
+          label: coverage
+          message: ${{ steps.coverage.outputs.pct }}%
+          valColorRange: ${{ steps.coverage.outputs.pct }}
+          minColorRange: 50
+          maxColorRange: 95
