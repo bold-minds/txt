@@ -218,8 +218,8 @@ func Print(args ...any) {
 
 	// Map mode: exactly two args, (string, map[string]any).
 	if len(args) == 2 {
-		if template, ok := args[0].(string); ok {
-			if data, ok := args[1].(map[string]any); ok {
+		if template, templateOK := args[0].(string); templateOK {
+			if data, dataOK := args[1].(map[string]any); dataOK {
 				fmt.Println(formatMap(template, data))
 				return
 			}
