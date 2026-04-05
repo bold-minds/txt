@@ -3,7 +3,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/bold-minds/txt.svg)](https://pkg.go.dev/github.com/bold-minds/txt)
 [![Build](https://img.shields.io/github/actions/workflow/status/bold-minds/txt/test.yaml?branch=main&label=tests)](https://github.com/bold-minds/txt/actions/workflows/test.yaml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/bold-minds/txt)](go.mod)
-[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/clairevnext/eb5318a268371b987ef7b15fef8f9bee/raw/coverage.json)](https://github.com/bold-minds/txt/actions/workflows/test.yaml)
+[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/bold-admin/44ed073eefff41adcb04961aef888e84/raw/coverage.json)](https://github.com/bold-minds/txt/actions/workflows/test.yaml)
 
 **Outcome-named string formatting and manipulation — the stdlib helpers Go doesn't ship.**
 
