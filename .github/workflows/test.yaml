@@ -26,13 +26,16 @@ jobs:
         with:
           go-version: 'stable'
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
-          # v2.0.2 matches the version pinned by the rest of the
-          # bold-minds Go library family. The .golangci.yml in this
-          # repo uses the v2 config schema (`version: "2"`), which
-          # the older v1.60.3 pin rejected with "the configuration
-          # contains invalid elements".
+          # golangci-lint-action@v7 is required to run golangci-lint v2.
+          # v6 of the action only supports v1 binaries and fails with
+          # "golangci-lint v2 is not supported by golangci-lint-action
+          # v6, you must update to golangci-lint-action v7" when asked
+          # for a v2 version. The .golangci.yml in this repo uses the
+          # v2 config schema (`version: "2"`), which v1 binaries
+          # rejected with "the configuration contains invalid elements".
+          # Pin v2.0.2 to match the rest of the bold-minds family.
           version: v2.0.2
           args: --timeout=10m
 
