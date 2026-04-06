@@ -26,7 +26,7 @@ jobs:
         with:
           go-version: 'stable'
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           # golangci-lint-action@v7 is required to run golangci-lint v2.
           # v6 of the action only supports v1 binaries and fails with
