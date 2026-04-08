@@ -2,70 +2,57 @@
 
 ## Supported Versions
 
+Only the **latest released minor version** receives security patches.
+
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.x.x   | :white_check_mark: |
+| latest  | :white_check_mark: |
+| older   | :x:                |
 
 ## Reporting a Vulnerability
 
-We take security vulnerabilities seriously. If you discover a security vulnerability, please follow these steps:
+**Do not open a public GitHub issue for security problems.**
 
-### 1. **Do Not** Create a Public Issue
+### 1. Report Privately
 
-Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.
+Report via **[GitHub Security Advisories](https://github.com/bold-minds/txt/security/advisories/new)**. This creates a confidential channel between you and the maintainers.
 
-### 2. Report Privately
+If the Security Advisories flow is unavailable, email **security@bold-minds.com**.
 
-Send an email to **security@boldminds.tech** with:
+### 2. What to Include
 
-- **Subject**: Security Vulnerability in bold-minds/txt
-- **Description**: Detailed description of the vulnerability
-- **Steps to Reproduce**: Clear steps to reproduce the issue
-- **Impact**: Potential impact and severity assessment
-- **Suggested Fix**: If you have ideas for a fix (optional)
+- A description of the issue and its impact
+- Steps to reproduce or a proof-of-concept
+- The version affected
+- Your Go version and OS, if relevant
+- Any suggested mitigation
 
 ### 3. Response Timeline
 
-- **Initial Response**: Within 48 hours
-- **Status Update**: Within 7 days
-- **Resolution**: Varies based on complexity, typically within 30 days
+- **Initial acknowledgement**: within 48 hours
+- **Triage + severity assessment**: within 7 days
+- **Resolution**: varies based on complexity, typically within 30 days
 
-## Security Considerations
+You will be credited in the release notes unless you request otherwise.
 
-`txt` is a small, self-contained string library with a narrow attack surface:
+### 4. Disclosure Process
 
-- **No network I/O.** `txt` does not make network calls.
-- **No file I/O.** `txt` does not read or write files (apart from `Print`, which writes a formatted string to stdout via `fmt.Println`).
-- **No external dependencies.** Pure Go stdlib.
-- **Minimal reflection.** Reflection is used in exactly one place — `formatValue` calls `reflect.TypeOf(v).Kind() == reflect.Chan` to render channel arguments for `Format`. All other type handling goes through a concrete type switch.
-- **Cryptographically-random string generation.** `Random` draws from `crypto/rand` (not `math/rand`) via a rejection-sampling helper that avoids modulo bias.
-
-### Known behaviors callers must be aware of
-
-#### `Truncate` can produce invalid UTF-8
-
-`Truncate` operates on bytes, not runes. Calling it on a string that contains multibyte UTF-8 characters can cut mid-sequence and yield a byte slice that is not valid UTF-8 (e.g. `txt.Truncate("héllo", 2, "")` → `"h\xc3"`). This is a deliberate trade-off for predictable byte-length bounds. For UTF-8 safety, bound the input with `Substring` first, which operates on runes.
-
-This is not a panic or memory-safety issue, but it can surface in downstream systems that assume well-formed UTF-8 (database columns, JSON encoders, Protobuf fields). Treat `Truncate` as a byte operation and encode accordingly.
-
-#### `Random` and `randInt` panic on `crypto/rand` failure
-
-`Random` and the internal `randInt` helper panic with `"txt: crypto/rand.Read failed: <err>"` if `crypto/rand.Read` returns a non-nil error. On a healthy system this never happens — `crypto/rand` only fails on extraordinary system-level faults (e.g. a sealed getrandom syscall, an exhausted file descriptor table). The library does not attempt to recover because there is no meaningful fallback for a broken entropy source, and silently returning predictable output would be worse than a panic.
-
-#### `Random` entropy use case
-
-`Random` is suitable for non-key secrets such as invite codes, correlation IDs, password resets, or test fixtures. It is **not** a substitute for key derivation or high-entropy cryptographic material — use `crypto/rand`, HKDF, or Argon2id directly for those.
-
-### No panics on caller input
-
-Apart from the `crypto/rand` failure path above, `txt` never panics on any documented caller input. `Substring` clamps out-of-range indices, `Truncate` tolerates negative and oversized `maxLen`, and `Format` leaves unfilled placeholders in place when arguments are missing so the bug is visible to whoever reads the log line.
+1. We acknowledge receipt of your vulnerability report
+2. We investigate and validate the vulnerability
+3. We develop and test a fix
+4. We coordinate disclosure timing with you
+5. We release a security update
+6. We publicly acknowledge your responsible disclosure (if desired)
 
 ## Security Updates
 
-Security updates will be released as patch versions (e.g., 0.1.1),
-documented in CHANGELOG.md, and announced through GitHub releases.
+Security updates will be:
+
+- Released as patch versions
+- Documented in CHANGELOG.md
+- Announced through GitHub releases
+- Tagged with security labels
 
 ## Acknowledgments
 
-We appreciate responsible disclosure and will acknowledge security
-researchers who help improve the security of this project.
+We appreciate responsible disclosure and will acknowledge security researchers who help improve the security of this project.
