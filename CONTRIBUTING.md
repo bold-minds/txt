@@ -1,122 +1,118 @@
-# Contributing to `each`
+# Contributing
 
-Thanks for your interest in contributing. This guide covers the operational process. For the **why** — the design principles every contribution is tested against — see **[bold-minds/oss/PRINCIPLES.md](https://github.com/bold-minds/oss/blob/main/PRINCIPLES.md)**.
+Thank you for your interest in contributing! We welcome contributions that improve the library while maintaining its focus on simplicity, performance, and Go idioms.
 
-## 🎯 Before You Start
+## Getting Started
 
-Every contribution is measured against the four Bold Minds principles: **outcome naming**, **one way to do each thing**, **get out of the way**, and **non-goals explicit**. If your proposed change doesn't honor these, it will not be merged.
+### Prerequisites
 
-**Read [PRINCIPLES.md](https://github.com/bold-minds/oss/blob/main/PRINCIPLES.md) first.**
+- **Go 1.22+**
+- **Git**
+- **golangci-lint** (optional, for comprehensive linting)
 
-## 🔧 Development Setup
+### Development Setup
 
-**Requirements:** Go 1.21 or later, Git, Bash.
+1. **Fork and clone the repository**:
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/txt.git
+   cd txt
+   ```
 
-```bash
-git clone https://github.com/bold-minds/each.git
-cd each
-go test ./...              # unit tests
-go test -race ./...        # race detection
-go test -bench=. ./...     # benchmarks
-./scripts/validate.sh      # full validation pipeline
-./scripts/validate.sh ci   # strict CI mode
+2. **Run tests**:
+   ```bash
+   go test -race ./...
+   ```
+
+## What We're Looking For
+
+### Encouraged
+
+- **Bug fixes** — fix issues or edge cases
+- **Performance improvements** — optimize without breaking compatibility
+- **Test enhancements** — add test cases, improve coverage
+- **Documentation improvements** — clarify usage, add examples
+
+### Requires Discussion First
+
+- **API changes** — modifications to public interfaces
+- **New dependencies** — adding external packages
+- **Breaking changes** — changes that affect backward compatibility
+
+### Not Accepted
+
+- **Feature creep** — complex features that don't align with Go idioms
+- **Non-idiomatic Go** — code that doesn't follow Go conventions
+- **Performance regressions** — changes that significantly slow down the library
+
+## Contribution Process
+
+### 1. Create an Issue First
+
+For significant changes, please create an issue to discuss:
+- What problem you're solving
+- Your proposed approach
+- Any potential breaking changes
+
+### 2. Development Workflow
+
+1. **Create a feature branch**:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+2. **Make your changes** — follow the code style guidelines below, add tests, update documentation as needed.
+
+3. **Validate your changes**:
+   ```bash
+   go fmt ./...
+   go vet ./...
+   go test -race ./...
+   ```
+
+4. **Commit your changes**:
+   ```bash
+   git commit -m "feat: add your feature description"
+   ```
+
+5. **Push and create a pull request**:
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+
+### 3. Pull Request Guidelines
+
+Your PR should:
+- Have a clear title describing the change
+- Reference any related issues using `Fixes #123` or `Closes #123`
+- Include tests for new functionality
+- Pass all CI checks
+- Maintain backward compatibility unless discussed otherwise
+
+## Code Style
+
+- Follow standard Go formatting (`go fmt`)
+- Use meaningful variable and function names
+- Write clear, concise comments for public APIs
+- Follow Go's error handling patterns
+- Write table-driven tests where appropriate
+- Test both success and error cases
+- Include edge cases (nil values, empty strings, etc.)
+- Run tests with `-race` to ensure thread safety
+
+## Commit Messages
+
+We follow conventional commits:
+
+```
+type(scope): description
 ```
 
-Your contribution must pass `./scripts/validate.sh ci` before submitting.
+Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`
 
-## 📁 Project Structure
+## Code Review
 
-```
-each/
-├── each.go                # Implementation (single file)
-├── each_test.go           # Unit tests with adversarial coverage
-├── bench_test.go          # Benchmarks
-├── examples/              # Runnable examples
-├── scripts/
-│   └── validate.sh        # Validation pipeline
-├── README.md
-├── CONTRIBUTING.md        # This file
-├── CHANGELOG.md
-├── CODE_OF_CONDUCT.md
-├── SECURITY.md
-├── LICENSE
-└── go.mod
-```
+We look for: correctness, performance, style, tests, documentation, and backward compatibility. Initial review within 2-3 business days.
 
-Flat layout. No `internal/` directory.
+## License
 
-## 🎨 Code Style
-
-### Naming
-- Outcome naming per PRINCIPLES.md. Function names describe the predicate-based operation performed.
-
-### Error Handling
-- Functions **must not panic** on valid input.
-- No error returns — operations either succeed or return sensible defaults (zero values, non-nil empty slices/maps).
-- Every function is nil-safe.
-
-### Documentation
-- Every exported function has a doc comment describing behavior, edge cases (nil/empty input), and ordering guarantees.
-- Panic risks from caller-side misuse (non-comparable key types from `GroupBy`/`KeyBy`) are documented in the package doc.
-
-### Dependencies
-- **Zero external dependencies.** `each` is pure stdlib.
-
-## 🧪 Testing
-
-**Coverage target: 100% of exported functions.**
-
-**Every PR must include adversarial tests.** The lesson from the wider Bold Minds library family: passing validation is necessary but insufficient. Tests must explicitly verify:
-
-1. **Non-nil return guarantees** — no function returns `nil` for empty results when the docs promise "non-nil empty"
-2. **Immutability** — input slices are byte-identical before and after the call
-3. **Result non-aliasing** — mutating the returned slice does not affect the input
-4. **Custom comparable key types** — `GroupBy`/`KeyBy` must work with named types, structs, and any other comparable Go type
-5. **Short-circuit evaluation** — `Every` must stop on the first false; write a counter-based test that would catch a regression
-6. **Stateful predicates** — closures with captured state must work (common real-world pattern)
-
-```bash
-go test -v ./...
-go test -race ./...
-go test -cover ./...
-go test -bench=. -benchmem ./...
-```
-
-## 📝 Pull Request Process
-
-### PR Checklist
-
-- [ ] **Outcome naming** — does the function name describe what the caller gets?
-- [ ] **One way** — does any existing function (this library or stdlib) already do this?
-- [ ] **Get out of the way** — can a Go dev use this from the signature alone?
-- [ ] **Non-goals** — does this violate any of the library's stated non-goals?
-- [ ] Tests cover 100% of new code
-- [ ] Adversarial tests included (nil returns, immutability, aliasing)
-- [ ] Benchmarks added for new exported functions
-- [ ] README updated (if adding or changing exported functions)
-- [ ] CHANGELOG.md updated
-- [ ] `./scripts/validate.sh ci` passes locally
-
-## 🆕 Adding a New Function
-
-`each` is deliberately scoped to seven functions. New additions must clear a high bar:
-
-1. Read the library's non-goals in [README.md](README.md#-whats-deliberately-not-here) and [PRINCIPLES.md](https://github.com/bold-minds/oss/blob/main/PRINCIPLES.md)
-2. Prove the stdlib gap. Current Go's `slices` package is more capable than many realize.
-3. Confirm the function operates on a single slice with a predicate or key function (operations on multiple slices belong in [`bold-minds/list`](https://github.com/bold-minds/list)).
-4. Show real-world evidence of the pain.
-5. Reject anything that is a thin wrapper around `slices.IndexFunc`, `slices.ContainsFunc`, or other stdlib helpers.
-
-## 🏷️ Versioning and Releases
-
-- Semantic versioning
-- v0.x: API may change between minor versions
-- v1.0+: breaking changes require major version bump
-
-## 🙏 Code of Conduct
-
-See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-
-## 📄 License
-
-By contributing, you agree your contributions are licensed under the MIT License.
+By contributing, you agree that your contributions will be licensed under the same license that covers the project.
